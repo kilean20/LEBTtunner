@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import re
 from datetime import datetime
+from dictClass import dictClass
 
 
 # PVs for beam current measure
@@ -59,27 +60,6 @@ decision_PVs = ["FE_LEBT:DCH_D0979:I_CSET",
                 "FE_LEBT:DCV_D0992:I_CSET"]
 
 
-# dictClass
-class dictClass(dict):
-    def __getattr__(self, name):
-        try:
-            return self[name]
-        except KeyError as e:
-            raise AttributeError(name) from e
-
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
-
-    def __repr__(self):
-        if self.keys():
-            m = max(map(len, list(self.keys()))) + 1
-            return '\n'.join([k.rjust(m) + ': ' + repr(v)
-                              for k, v in sorted(self.items())])
-        else:
-            return self.__class__.__name__ + "()"
-
-    def __dir__(self):
-        return list(self.keys())
 
 
 # LEBT_tunner
