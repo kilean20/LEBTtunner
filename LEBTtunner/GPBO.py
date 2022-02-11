@@ -6,7 +6,7 @@ from botorch.acquisition import UpperConfidenceBound
 from botorch.optim import optimize_acqf
 
 
-from dictClass import dictClass
+from .dictClass import dictClass
 import pickle
 
 

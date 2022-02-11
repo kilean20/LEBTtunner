@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import re
 from datetime import datetime
-from dictClass import dictClass
+from .dictClass import dictClass
 
 
 # PVs for beam current measure
