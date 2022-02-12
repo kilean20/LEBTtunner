@@ -10,7 +10,7 @@ from .dictClass import dictClass
 import pickle
 
 
-def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=None, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
+def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
     '''
     func: function to obtimize
     x0: (numpy vector) initial function argument
@@ -24,8 +24,9 @@ def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=None, save_op
     result = dictClass
     result.history = dictClass
     
-    x = torch.unsqueeze(torch.tensor(x0),0)
-    y = torch.unsqueeze(torch.tensor(-func(x0,*args)),0)
+    x = torch.tensor(x0)[None,:]
+    y = torch.tensor([-func(x0,*args)])[None,:]
+    print("GPBO got y")
     
     result.history.x = x.detach().numpy()
     result.history.y = -y.detach().numpy()
@@ -35,15 +36,15 @@ def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=None, save_op
     
     i_patience = 0 
     for i_eval in range(1,maxnfev):
-        
         if verbose:
-            print("epoch :{0:3d}/{0:3d}, min_fun :{1:.3e}".format(i_eval, maxfev, y_min))
+            print("epoch :{0:3d}/{0:3d}, min_fun :{1:.3e}".format(i_eval, maxnfev, y_min))
             print("decision x: ", result.x)
-            
-        if i_patience >= patience:            
+        print(i_patience, patience)
+        if i_patience >= patience and patience>0:       
             result.message = "maximum patience reached"
             break
             
+        print('x.shape,y.shape',x.shape,y.shape)
         gp = SingleTaskGP(x,y)
         mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
         fit_gpytorch_model(mll)

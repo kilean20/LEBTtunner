@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy import stats
 import time
 from copy import deepcopy as copy
-from dictClass import dictClass
+from .dictClass import dictClass
 
 
 def read_ascii(fid,format_id,npt=None):

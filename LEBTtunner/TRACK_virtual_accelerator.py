@@ -1,14 +1,15 @@
-import TRACKutil
-import TRACKutil_kilean as kutil
+from . import TRACKutil
+from . import TRACKutil_kilean as kutil
+# from .dictClass import dictClass
 
 import numpy as np
 import pandas as pd
 import re
 
 import requests
-import zipfile
 import os
-
+import time
+t0 = time.time()
 
 class LEBT():
     def __init__(self, QperA=17/78, current=25., _dutyfactor=1, npt=2000, init_beam_arg=np.zeros(14),working_directory='./'):
@@ -18,7 +19,7 @@ class LEBT():
         self._current = current
         self._dutyfactor = _dutyfactor
         self._npt = npt
-        if working_directory[-1]=="/"
+        if working_directory[-1]=="/":
             self._working_directory = working_directory
         else:
             self._working_directory = working_directory + "/"
@@ -163,12 +164,12 @@ class LEBT():
     def _get_track(self, Win=12e3):
         trk_kwargs = {"npat":self._npt,
                       "Win":Win}
-        kutil.adjust_trk_file(self._working_directory+"track_ref.dat",
-                              self._working_directory+"track.dat",
+        kutil.adjust_trk_file("track_ref.dat",
+                              "track_adj.dat",
                               **trk_kwargs)
-        track = TRACKutil.exeClass(lat_file=self._working_directory+'sclinac_ref.dat', 
-                                   trk_file=self._working_directory+'track.dat', 
-                                   fi_in_file=self._working_directory+'fi_in_ref.dat')
+        track = TRACKutil.exeClass(lat_file='sclinac_ref.dat', 
+                                   trk_file='track_adj.dat', 
+                                   fi_in_file='fi_in_ref.dat')
         for name,family,simval in self._name_family_simval:
             track.reconfigure(name,family,simval)
         return track
@@ -176,13 +177,14 @@ class LEBT():
     def _runTRACK(self,batch=True):
         if self._simulated:
             return
-        track = self._get_track()
         
         old_path = os.getcwd()
         os.chdir(self._working_directory)
+        print("get TRACK")
+        track = self._get_track()
+        print("run TRACK")
         track.run(batch=batch)
-        os.chdir(old_path)
-        
+        print("run done, old_path=",old_path)
         self._measured_data = kutil.get_measurements(track,
                                                      keys=["BCM_D0989",
                                                            "BCM_D1055",
@@ -190,23 +192,29 @@ class LEBT():
                                                            "BPM_D1072",
                                                            "BPM_D1094",
                                                            "FC_D1102"])
+        os.chdir(old_path)
+        print("os.chdir(old_path).....?")
         self._simulated = True
+        print("_runTRACK done")
         
         
     def _download_TRACK_files(self,path=None):
-        if path is not None:
-            if path[-1]!="/"
-                path = path + "/"
-            shutil.copyfile(path+"TRACK_files.zip", self._working_directory+"TRACK_files.zip")
+        from distutils.dir_util import copy_tree
+  
+        if path is None:
+            from .package_path import package_path
+            path = package_path+"/TRACK_data"
         else:
-            url = "https://drive.google.com/file/d/1_DgBN4TEQor44Dbj3sygX3zpeD5x7RO3/view?usp=sharing"
-            response = requests.get(url, stream=True)
-            with open(self._working_directory+"TRACK_files.zip", "wb") as handle:
-                handle.write(response.content)
+            assert type(path) is str
+            if path[-1]=="/":
+                path = path[:-1]
+                
+        from_directory = path
+        to_directory = self._working_directory
+        copy_tree(from_directory, to_directory)
+            
+            
 
-        with zipfile.ZipFile(self._working_directory+"TRACK_files.zip", 'r') as zip_ref:
-            zip_ref.extractall(self._working_directory)
-        
         
     def _from_PV_to_name_family_Dnum(self,PVname):
         name = re.findall("\w+_D\d\d\d\d",PVname)[0]
@@ -284,7 +292,9 @@ class LEBT():
 
 
     def caget(self,PVname):
+        print("in caget")
         self._runTRACK()
+        print("caget time",time.time()-t0)
         name,family,Dnum = self._from_PV_to_name_family_Dnum(PVname)
         if "BPM_" in name:
             if family == "XPOS_RD":
@@ -330,4 +340,6 @@ class LEBT():
             try:
                 return self._conversion_from_TRACK_to_PV(PVname)
             except:
-                raise ValueError("not yet implemented PV for measurement: ",PVname)           
+                raise ValueError("not yet implemented PV for measurement: ",PVname)    
+                
+        print("caget done",time.time()-t0)

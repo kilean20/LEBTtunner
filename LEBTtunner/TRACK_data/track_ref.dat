@@ -1,0 +1,76 @@
+&TRAN
+
+table_dir='./FIELDS/'
+!table_dir='/usr/share/track/FIELDS/'
+
+! ECR twiss by Hitao  
+Win =0.012d06
+ freqb =40.25D06 
+
+	
+  nqtot= 1
+  npat = 10000
+  qq   = 17
+  amass= 78
+  current= 0.0
+  
+
+  Qavr=17, Qdesign=17, Adesign=78
+  
+! 6 x normalized rms [cm-mrad], beta: [cm/rad]
+
+epsnx = 0.042, alfax = 1.35, betax = 128
+epsny = 0.042, alfay = 1.35, betay = 128
+  
+  epsnz = 12.5D0,  alfaz = 1.1D0,   betaz =2.9
+! [cm] and [mrad] 
+  x00=0., xp00=0., y00=0., yp00=0., ph00=0.0, dww00=0.00
+	
+   phmax=180., dwwmax=10 dWWacc=0.1
+  db_b=0.0001, df_4D=180. 
+&END
+
+&INDEX
+  NRZ=1 igraph=1, iaccep=0,  isol=1,  iflag_dis=0,iflag2D=1,iflag_qq=1
+  iflag_rms=1, iint=100, nstep_cav=50
+  iflag_env=0,  iflag_ell=0, iflag_fenv=1
+  iflag_lev=0, isrf=49248874, iflag_corr=0
+  iread_dis=2, iwrite_dis=2, nrz_min=1 iflag_match=0 iwrite_step=1
+&END
+
+&CORRECT
+  partCorr=0.99d0 partEq=0d0 , MonErr=1  , iflag_vrand=1 
+&END
+ 
+	This is an example of beamline that comprises solenoids (with 3D fields),
+accelearting tube, bending magnets, quadrupoles and multiharmonic bunchers and 
+acceleraing cavities.
+
+	Nxgrd=65, Nygrd=65,Nzgrd=65
+  a_lim=0.5	
+  W_lim=0.2
+  TE00_step= 1.  
+  PHdev_step=1.  
+  TE00_lim =2.   
+  PHdev_lim =2.  
+  part = 0.995    
+  np_set=1.
+
+  
+ &MATCH
+
+ 
+   mat_typ=2, mat_opt=1
+  min_typ=1, min_opt=1
+  min_max=1000
+  min_los=1
+  min_bnd=1, bnd_fac=2., bnd_low=0., bnd_upp=0.
+  
+  !alpha beta[cm/rad] emit[?] 
+  !adding 1 m after the equad drift
+  !beamw=0., beamf= -0.082,270,0.0,-0.082,273.0,0.,0.,0.,0.
+  !beta[cm/rad] just before vertical bend
+  beamw=0., beamf= 0.681, 68.7, 0.0, 0.681, 67.4, 0., 0., 0., 0.
+  fit_err=.01
+
+&END

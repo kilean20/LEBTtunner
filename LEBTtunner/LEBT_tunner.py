@@ -1,4 +1,4 @@
-__all__ = ['decision_PVs', 'target_ref', 'LEBT_tunner']
+__all__ = ['_decision_PVs', '_target_ref', 'LEBT_tunner']
 
 
 import time
@@ -7,14 +7,16 @@ import numpy as np
 import pandas as pd
 import re
 from datetime import datetime
+import os
 from .dictClass import dictClass
+from .package_path import package_path
 
 
 # PVs for beam current measure
-current_PVs = ['FE_LEBT:BCM_D0989:AVGPK_RD',
-               'FE_MEBT:BCM_D1055:AVGPK_RD',
-               'FE_MEBT:FC_D1102:PKAVG_RD',
-               'FE_ISRC1:HVP_D0679:I_RD' ]
+_current_PVs = ['FE_LEBT:BCM_D0989:AVGPK_RD',
+                'FE_MEBT:BCM_D1055:AVGPK_RD',
+                'FE_MEBT:FC_D1102:PKAVG_RD',
+                'FE_ISRC1:HVP_D0679:I_RD' ]
 
 
 # target
@@ -47,17 +49,17 @@ weights = { 'FE_MEBT:BPM_D1056:XPOS_RD':1.0,
             'FE_MEBT:BPM_D1094:PHASE_RD':1.0 }
 
 weights = pd.DataFrame(weights,index=['weights'])
-target_ref = pd.concat([target,weights])
-target_ref.loc["weights"] = target_ref.loc["weights"]/target_ref.loc["weights"].sum()
+_target_ref = pd.concat([target,weights])
+_target_ref.loc["weights"] = _target_ref.loc["weights"]/_target_ref.loc["weights"].sum()
 
 
 
 
 # Decision PVs
-decision_PVs = ["FE_LEBT:DCH_D0979:I_CSET",
-                "FE_LEBT:DCV_D0979:I_CSET",
-                "FE_LEBT:DCH_D0992:I_CSET",
-                "FE_LEBT:DCV_D0992:I_CSET"]
+_decision_PVs = ["FE_LEBT:DCH_D0979:I_CSET",
+                 "FE_LEBT:DCV_D0979:I_CSET",
+                 "FE_LEBT:DCH_D0992:I_CSET",
+                 "FE_LEBT:DCV_D0992:I_CSET"]
 
 
 
@@ -65,32 +67,37 @@ decision_PVs = ["FE_LEBT:DCH_D0979:I_CSET",
 # LEBT_tunner
 class LEBT_tunner():
     def __init__(self, 
-                 target_ref=target_ref, 
-                 decision_PVs=decision_PVs, 
-                 current_PVs=current_PVs, 
+                 target_ref = None, 
+                 decision_PVs = None, 
+                 current_PVs = None, 
                  display_plots = False,
                  QperA = 17/78, 
                  virtual = False, virtual_kwarg={}):
         '''
         decision_PVs: python list of PV for tunning (i.e. for decision making)
         target_ref: DataFrame specifying optimization targets of BPM PVs and weghts for each PV
-        '''
-        for PV in decision_PVs:
-            assert PV[-4:] == "CSET", "invalid decision_PVs"   
-            
+        '''  
         def briefer(PV):
             name = re.findall("\w+_D\d\d\d\d",PV)[0]
             family = re.findall("_D\d\d\d\d:\w+_",PV)[0][6:-1]
             return name+family
-            
+        
+        if decision_PVs == None:
+            decision_PVs = _decision_PVs
+        for PV in decision_PVs:
+            assert PV[-4:] == "CSET", "invalid decision_PVs"   
         self.decision_PVs = decision_PVs
         self.decision_PVs_brief = [briefer(PV) for PV in decision_PVs]
         
+        if target_ref == None:
+            target_ref = _target_ref
         target_ref.loc["weights"] = target_ref.loc["weights"]/target_ref.loc["weights"].sum()
         self.target_ref = target_ref
         self.target_PVs = list(target_ref.columns)
         self.target_PVs_brief = [briefer(PV) for PV in target_ref.columns]
         
+        if current_PVs == None:
+            current_PVs = _current_PVs
         tmp = ['FE_MEBT:FC_D1102:PKAVG_RD',
                'FE_ISRC1:HVP_D0679:I_RD' ]
         self.current_PVs = [PV for PV in current_PVs if PV not in tmp]
@@ -103,7 +110,7 @@ class LEBT_tunner():
         
         self.virtual = virtual
         if virtual:
-            import TRACK_virtual_accelerator as _virtual_AC
+            from . import TRACK_virtual_accelerator as _virtual_AC
             _virtual_AC = _virtual_AC.LEBT(QperA = self.QperA, **virtual_kwarg)
             _virtual_AC._simulated = True
             self.caget = _virtual_AC.caget
@@ -114,7 +121,7 @@ class LEBT_tunner():
             self.caput = caput
            
         # check if normalization info present for decision_PVs
-        LEBT_statistical_info = pd.read_json('LEBT_statistical_info.json')
+        LEBT_statistical_info = pd.read_json(package_path+'/LEBT_statistical_info.json')
         for PV in self.decision_PVs:
             if not PV+"*Q/A" in LEBT_statistical_info.columns:
                 raise ValueError("the decision PV (",PV ,") is not present in 'LEBT_statistical_info.json' file")
@@ -173,16 +180,22 @@ class LEBT_tunner():
     
     
     def wait_RD_reach_CSET(self, PVs, Refs, Tolerances):
+        print("wait_RD_reach_CSET begin")
         time.sleep(0.1)
+        print("Refs= ",Refs)
+        print("Tolerances= ",Tolerances)
         V = np.array([self.caget(PV.replace("CSET","RD")) for PV in PVs])
         iitr = 0
+        print("V= ",V)
         while(np.max(np.abs(V-Refs)/Tolerances) > 1.) :
             time.sleep(0.1)
             V = np.array([self.caget(PV.replace("CSET","RD")) for PV in PVs])
+            print("V= ",V)
             iitr +=1
             if iitr>20:
                 print("current / voltage set ramping not yet stabilized after 2 secconds. Ignoreing CSET-RD stablization... ")
                 break
+        print("wait_RD_reach_CSET is done")
         return
     
     
@@ -190,6 +203,7 @@ class LEBT_tunner():
         '''
         mint_t : minimum time window (in second) for averageging
         '''
+        print("wait_RD_stablize_then_read for ",PVs )
         t0 = time.time()
         dt = 0.1  # measure period. need to verify with the maximum measurable frequency
         n = int(min_t/dt)
@@ -213,6 +227,8 @@ class LEBT_tunner():
                 concatV[i,:] = [self.caget(PV) for PV in PVs]
                 time.sleep(dt) 
             V = np.vstack((V,concatV))
+            
+        print("wait_RD_stablize_then_read is done")
         
         return np.mean(V,axis=0) #, np.std(V,axis=0)
         
@@ -228,6 +244,7 @@ class LEBT_tunner():
         RD_mean = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
         self.history.y.append(RD_mean)
 #         self.history.y_std.append(RD_std)
+        print("set_n_measure is done")
         return RD_mean
     
     
@@ -246,10 +263,11 @@ class LEBT_tunner():
         
         loss += y_measure[-2]/y_measure[-1]
         
+        print("loss_func is done")
         # call callback functions if any
         for func in self.callbacks:
             func()
-            
+        print("loss_func is returning")    
         return loss 
         
         

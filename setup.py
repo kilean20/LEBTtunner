@@ -2,6 +2,13 @@ import os
 from distutils.core import setup
 import sys
 
+package_path = os.getcwd()
+if not os.path.isdir("./LEBTtunner"):
+    os.mkdir("LEBTtunner")
+with open("LEBTtunner/package_path.py","w") as f:
+    f.write("package_path = '"+package_path+"/LEBTtunner'")
+
+
 setup(
     name = "LEBTtunner",
     version = "0.0.1",
