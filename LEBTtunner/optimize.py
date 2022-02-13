@@ -11,14 +11,13 @@ from .dictClass import dictClass
 import pickle
 
 
-def init_population_latinhypercube(len_of_vec,num_population,bounds,rng=None):
+def init_population_latinhypercube(num_population, len_of_vec, bounds, rng=None):
     """
     Initializes the population with Latin Hypercube Sampling.
     Latin Hypercube Sampling ensures that each parameter is uniformly
     sampled over its range.
     """
-    if rng is None:
-        rng = np.random
+    rng = np.random
         
     segsize = 1.0 / num_population
     samples = (segsize * rng.uniform(size=(num_population,len_of_vec))
@@ -36,10 +35,9 @@ def init_population_latinhypercube(len_of_vec,num_population,bounds,rng=None):
 
 
 
-def minimize_GP_LCB(func, bounds,
-                    x0=None, y0=None, 
+def minimize_GP_LCB(func, x0, bounds,
                     maxnfev=None, 
-                    n_init_pop=None, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
+                    n_init_pop = None, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
     '''
     func: function to obtimize
     x0: (numpy vector) initial function argument
@@ -48,36 +46,29 @@ def minimize_GP_LCB(func, bounds,
     LCB_nsig: lower confidence bound in unit of stantard deviation of GP prediction 
     patience: quit optimization if the function value is not improving for patience number of function evaluation
     '''
-    if n_init_pop is None:
-        x0_shape = np.array(x0).shape
-        if len(x0_shape)>1:
-            n_init_pop = x0_shape[0]
-        n_init_pop = len(bounds)
-    
-    x = init_population_latinhypercube(len(bounds),n_init_pop,bounds)
-    if x0 is not None:
-        x0_ = np.array(x0)
-        if len(x0_.shape)==1:
-            x[0,:] = x0_
-        else:
-            
-            
-        
-    m,n = x0.shape
     ndim = len(x0)
+    if n_init_pop == None:
+        n_init_pop = ndim
+    
+    x = np.zeros([n_init_pop,ndim])
+    x[0 ,:] = x0
+    x[1:,:] = init_population_latinhypercube(ndim, n_init_pop-1, bounds)
+            
     bounds_torch = torch.tensor(bounds)
     result = dictClass
     result.history = dictClass
     
-    x = torch.tensor(x0)[None,:]
-    y = torch.tensor([-func(x0,*args)])[None,:]
+    x = torch.tensor(x)
+    y = torch.tensor([-func(x_,*args) for x_ in x])
     print("GPBO got y")
     
     result.history.x = x.detach().numpy()
     result.history.y = -y.detach().numpy()
-    y_min = result.history.y[0]
-    result.history.y_min = [y_min]   
-    result.x = result.history.x[0]
+    
+    imin = result.history.y.argmin()    
+    result.x = result.history.x[imin]
+    y_min = result.history.y[imin]
+    result.history.y_min = [y_min]
     
     i_patience = 0 
     for i_eval in range(1,maxnfev):
