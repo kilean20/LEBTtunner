@@ -4,13 +4,42 @@ from botorch.fit import fit_gpytorch_model
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition import UpperConfidenceBound
 from botorch.optim import optimize_acqf
+import numpy as np
 
 
 from .dictClass import dictClass
 import pickle
 
 
-def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
+def init_population_latinhypercube(len_of_vec,num_population,bounds,rng=None):
+    """
+    Initializes the population with Latin Hypercube Sampling.
+    Latin Hypercube Sampling ensures that each parameter is uniformly
+    sampled over its range.
+    """
+    if rng is None:
+        rng = np.random
+        
+    segsize = 1.0 / num_population
+    samples = (segsize * rng.uniform(size=(num_population,len_of_vec))
+               + np.linspace(0., 1., num_population,
+                             endpoint=False)[:, np.newaxis])
+
+    population = np.zeros_like(samples)
+    
+    # Initialize population of candidate solutions by permutation
+    for j in range(len_of_vec):
+        order = rng.permutation(range(num_population))
+        population[:, j] = samples[order, j]
+
+    return population*(bounds[:,1]-bounds[:,0])+bounds[:,0]
+
+
+
+def minimize_GP_LCB(func, bounds,
+                    x0=None, y0=None, 
+                    maxnfev=None, 
+                    n_init_pop=None, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
     '''
     func: function to obtimize
     x0: (numpy vector) initial function argument
@@ -19,6 +48,22 @@ def minimize(func,x0,bounds,maxnfev, args=(), LCB_nsig=1, patience=0, save_optim
     LCB_nsig: lower confidence bound in unit of stantard deviation of GP prediction 
     patience: quit optimization if the function value is not improving for patience number of function evaluation
     '''
+    if n_init_pop is None:
+        x0_shape = np.array(x0).shape
+        if len(x0_shape)>1:
+            n_init_pop = x0_shape[0]
+        n_init_pop = len(bounds)
+    
+    x = init_population_latinhypercube(len(bounds),n_init_pop,bounds)
+    if x0 is not None:
+        x0_ = np.array(x0)
+        if len(x0_.shape)==1:
+            x[0,:] = x0_
+        else:
+            
+            
+        
+    m,n = x0.shape
     ndim = len(x0)
     bounds_torch = torch.tensor(bounds)
     result = dictClass
