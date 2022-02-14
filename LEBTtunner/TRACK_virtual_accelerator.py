@@ -1,18 +1,13 @@
 from . import TRACKutil
 from . import TRACKutil_kilean as kutil
-# from .dictClass import dictClass
-
 import numpy as np
 import pandas as pd
 import re
-
-import requests
 import os
 import time
-t0 = time.time()
 
 class LEBT():
-    def __init__(self, QperA=17/78, current=25., _dutyfactor=1, npt=2000, init_beam_arg=np.zeros(14),working_directory='./'):
+    def __init__(self, QperA=17/78, current=25., _dutyfactor=1, npt=2000, init_beam_arg=np.zeros(14), working_directory='./'):
         #for 78Kr17
         self._cS4 = -0.002891 
         self._scale = (17/78)/QperA
@@ -108,6 +103,7 @@ class LEBT():
                                   ]
 
         self._init_beam(init_beam_arg)
+        self.run_time = []
 
 
     def _init_beam(self,arg=np.zeros(14)):
@@ -120,9 +116,9 @@ class LEBT():
         """
         beta_ref = 0.005075945
         cov_sqrt_ref = np.array([[ 2.86557295e-01,  6.54452658e-03, -1.34972639e-01,  2.70814331e-04],
-                                [ 6.54452658e-03,  5.63021572e-03, -1.74878926e-03, -1.45392852e-03],
-                                [-1.34972639e-01, -1.74878926e-03,  6.69979613e-01, -7.85738478e-04],
-                                [ 2.70814331e-04, -1.45392852e-03, -7.85738478e-04,  2.11537307e-03]])
+                                 [ 6.54452658e-03,  5.63021572e-03, -1.74878926e-03, -1.45392852e-03],
+                                 [-1.34972639e-01, -1.74878926e-03,  6.69979613e-01, -7.85738478e-04],
+                                 [ 2.70814331e-04, -1.45392852e-03, -7.85738478e-04,  2.11537307e-03]])
         cov_ref = cov_sqrt_ref.dot(cov_sqrt_ref.T)
         
         scale4 = np.array([cov_sqrt_ref[i,i] for i in range(4)])
@@ -151,11 +147,11 @@ class LEBT():
         
         scale4 = np.array([cov_ref[i,i]**0.5 for i in range(4)])
         
-        mean = 0.2*arg[:4]*scale4 # offset in unit of 20% of rms beam size
+        mean = 0.2*arg[:4]*scale4 # offset in unit of 20% of nominal rms beam size
         pdata = np.zeros([self._npt,6])
         pdata[:,:4] = np.random.multivariate_normal(mean, cov, size=self._npt)
-        pdata[:,4] = np.random.rand(self._npt)*2*np.pi-np.pi
-        pdata[:,5] = beta_ref*(1+1e-4*np.random.randn(self._npt))
+        pdata[:, 4] = np.random.rand(self._npt)*2*np.pi-np.pi
+        pdata[:, 5] = beta_ref*(1+1e-4*np.random.randn(self._npt))
         
         kutil.write_dist(pdata,beta_ref=0.005075945,fname=self._working_directory+"read_dis.dat")
         self._simulated = False
@@ -174,28 +170,30 @@ class LEBT():
             track.reconfigure(name,family,simval)
         return track
 
+
     def _runTRACK(self,batch=True):
         if self._simulated:
             return
-        
         old_path = os.getcwd()
         os.chdir(self._working_directory)
-        print("get TRACK")
         track = self._get_track()
-        print("run TRACK")
+        t0 = time.time()
         track.run(batch=batch)
-        print("run done, old_path=",old_path)
-        self._measured_data = kutil.get_measurements(track,
-                                                     keys=["BCM_D0989",
-                                                           "BCM_D1055",
-                                                           "BPM_D1056",
-                                                           "BPM_D1072",
-                                                           "BPM_D1094",
-                                                           "FC_D1102"])
+        t1 = time.time()
+        self.run_time.append(t1-t0)
+        try:
+            self._measured_data = kutil.get_measurements(track,
+                                                         keys=["BCM_D0989",
+                                                               "BCM_D1055",
+                                                               "BPM_D1056",
+                                                               "BPM_D1072",
+                                                               "BPM_D1094",
+                                                               "FC_D1102"])
+        except:
+            # raise RuntimeError("TRACK simulation failed. Check TRACK files...")
+            self._measured_data = "TRACK simulation failed. Check TRACK files..."
         os.chdir(old_path)
-        print("os.chdir(old_path).....?")
         self._simulated = True
-        print("_runTRACK done")
         
         
     def _download_TRACK_files(self,path=None):
@@ -212,8 +210,6 @@ class LEBT():
         from_directory = path
         to_directory = self._working_directory
         copy_tree(from_directory, to_directory)
-            
-            
 
         
     def _from_PV_to_name_family_Dnum(self,PVname):
@@ -225,10 +221,8 @@ class LEBT():
         elif 'DCV_' in name:
             name = name.replace("DCV_","DCHV_")
             family = "tm_ykick"
-        
         else:
             family = re.findall("_D\d\d\d\d:\w+",PVname)[0][7:]
-
         return name,family,Dnum
             
 
@@ -287,14 +281,13 @@ class LEBT():
                 break
         if not flag_exist:
             self._name_family_simval.append([name,family,simval])
-        
         self._simulated = False
 
 
     def caget(self,PVname):
-        print("in caget")
         self._runTRACK()
-        print("caget time",time.time()-t0)
+        if type(self._measured_data) is str:
+            return 0
         name,family,Dnum = self._from_PV_to_name_family_Dnum(PVname)
         if "BPM_" in name:
             if family == "XPOS_RD":
@@ -307,7 +300,7 @@ class LEBT():
                 elif Dnum == 1072:
                     offset = -26.7 -85.7
                 elif Dnum == 1094:
-                    offset = -19.4 -55.0
+                    offset = -19.4 -50.0
                 else:
                     offset = 0
                 return self._measured_data.loc[name].zcen + offset
@@ -341,5 +334,3 @@ class LEBT():
                 return self._conversion_from_TRACK_to_PV(PVname)
             except:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)    
-                
-        print("caget done",time.time()-t0)

@@ -10,6 +10,9 @@ from datetime import datetime
 import os
 from .dictClass import dictClass
 from .package_path import package_path
+from .utils import is_notebook
+if is_notebook():
+    from IPython.display import display, clear_output
 
 
 # PVs for beam current measure
@@ -80,7 +83,7 @@ class LEBT_tunner():
         if decision_PVs == None:
             decision_PVs = _decision_PVs
         for PV in decision_PVs:
-            assert PV[-4:] == "CSET", "invalid decision_PVs"   
+            assert PV[-4:] == "CSET", "invalid decision_PVs"
         self.decision_PVs = decision_PVs
         self.decision_PVs_brief = [briefer(PV) for PV in decision_PVs]
         
@@ -96,7 +99,7 @@ class LEBT_tunner():
         tmp = ['FE_MEBT:FC_D1102:PKAVG_RD',
                'FE_ISRC1:HVP_D0679:I_RD' ]
         self.current_PVs = [PV for PV in current_PVs if PV not in tmp]
-        # flowing order of beam current PVs list are important. They are used in loss function
+        # flowing order of beam current PVs list are important. They are used in loss function for good transmission
         self.current_PVs = self.current_PVs + ['FE_MEBT:FC_D1102:PKAVG_RD',
                                                'FE_ISRC1:HVP_D0679:I_RD' ]
         self.current_PVs_brief = [briefer(PV) for PV in self.current_PVs]
@@ -115,11 +118,11 @@ class LEBT_tunner():
             self.caget = caget
             self.caput = caput
            
-        # check if normalization info present for decision_PVs
+        # check if normalization info (made from archived data) present for decision_PVs
         LEBT_statistical_info = pd.read_json(package_path+'/LEBT_statistical_info.json')
         for PV in self.decision_PVs:
             if not PV+"*Q/A" in LEBT_statistical_info.columns:
-                raise ValueError("the decision PV (",PV ,") is not present in 'LEBT_statistical_info.json' file")
+                raise ValueError("the decision PV (",PV ,") is not present in 'LEBT_statistical_info.json' file. Use other devision PVs ")
         
         self.decision_stat = LEBT_statistical_info[[PV+"*Q/A" for PV in self.decision_PVs]]/self.QperA
         def mapper(tmp):
@@ -167,11 +170,12 @@ class LEBT_tunner():
         return np.all(np.logical_not( isFitTrusted *isSlopeLarge ))
     
     
-    def read_normalized_decision_values(self,normalize=True):
+    def read_normalized_decision_values(self):
         x0 = np.array([self.caget(pv.replace("CSET","RSET")) for pv in self.decision_PVs])
-        if normalize:
-#             x0 = (x0-self.decision_stat.loc["average"].values)*self.decision_stat.loc["standard_deviation"].values
+        if self.virtual:
             x0 = x0*self.decision_stat.loc["standard_deviation"].values
+        else:
+            x0 = (x0-self.decision_stat.loc["average"].values)*self.decision_stat.loc["standard_deviation"].values
         return x0
     
     
@@ -184,7 +188,7 @@ class LEBT_tunner():
             V = np.array([self.caget(PV.replace("CSET","RD")) for PV in PVs])
             iitr +=1
             if iitr>20:
-                print("current / voltage set ramping not yet stabilized after 2 secconds. Ignoreing CSET-RD stablization... ")
+                print("current / voltage ramping not yet stabilized after 2 secconds. Ignoreing CSET vs RD stablization... ")
                 break
         return
     
@@ -229,37 +233,42 @@ class LEBT_tunner():
         # wait target RD stablize and measure 
 #         RD_mean, RD_std = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
         RD_mean = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
-        self.history.y.append(RD_mean)
+        self.history.y.append(list(RD_mean))
 #         self.history.y_std.append(RD_std)
         return RD_mean
     
     
     def loss_func(self,normalized_decision_values,weight_on_transmission=1.0):
-#         x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values + self.decision_stat.loc["average"].values 
-        x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values 
+        if self.virtual:
+            x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values 
+        else:
+            x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values + self.decision_stat.loc["average"].values 
         y_measure = self.set_n_measure(x)
-        
-        y_true = self.target_ref.loc["target"].values
-        y_std = self.target_stat.loc["standard_deviation"].values
-        y_weight = self.target_ref.loc["weights"].values
-        
-        n_target = len(self.target_PVs)
-        loss = np.sum(np.sqrt(((y_true - y_measure[:n_target])/y_std)**2)*y_weight)
-        loss += weight_on_transmission*y_measure[-2]/y_measure[-1]
+        if self.virtual and np.all(y_measure==0):
+            loss = np.inf
+        else:
+            y_true = self.target_ref.loc["target"].values
+            y_std = self.target_stat.loc["standard_deviation"].values
+            y_weight = self.target_ref.loc["weights"].values
+            
+            n_target = len(self.target_PVs)
+            loss = np.sum(np.sqrt(((y_true - y_measure[:n_target])/y_std)**2)*y_weight)
+            loss += weight_on_transmission*y_measure[-2]/y_measure[-1]
         self.history.loss.append(loss)
 
         # call callback functions if any
         for func in self.callbacks:
             func()
+
         return loss 
         
         
     def init_plot(self):
         self.plot = dictClass()
-        self.plot.fig, self.plot.subs = plt.subplots(5, 1, figsize=(15, 18))       
+        self.plot.fig, self.plot.subs = plt.subplots(5, 1, figsize=(12, 14))
         
         # subplot[0] -- decision parameters
-        self.plot.subs[0].set_title('decision parameters')
+        # self.plot.subs[0].set_title('decision parameters')
         self.plot.subs[0].yaxis.grid()
         self.plot.sub0 = [
                            self.plot.subs[0].plot([],[],label=label)[0]
@@ -307,12 +316,17 @@ class LEBT_tunner():
         self.plot.subs[4].legend()
         
         self.plot.fig.tight_layout()
-        self.plot.fig.show()
-        self.plot.fig.canvas.draw()
-        
+        if is_notebook():
+            display(self.plot.fig)
+            # clear_output(wait = True)
+        else:
+            self.plot.fig.show()
+            self.plot.fig.canvas.draw()
         
         
     def re_plot(self):
+        if is_notebook():
+            clear_output(wait = True)
         niter = len(self.history.loss)
         x = np.arange(niter)
         y = np.array(self.history.x)
@@ -342,9 +356,14 @@ class LEBT_tunner():
             self.plot.subs[i].relim()
             self.plot.subs[i].autoscale()
         
-        self.plot.sub4.set_data(x,self.history.loss)
-        self.plot.fig.canvas.draw()
-        self.plot.fig.canvas.flush_events()
+        if is_notebook():
+            display(self.plot.fig)
+            # clear_output(wait = True)
+        else:
+            self.plot.fig.canvas.draw()
+            self.plot.fig.canvas.flush_events()
+        if not os.path.isdir("./data"):
+            os.mkdir("./data")
         self.plot.fig.savefig('./data/LEBT_trajectory_scan_'+self.date+'.png', dpi=(144), bbox_inches='tight')
         
         
