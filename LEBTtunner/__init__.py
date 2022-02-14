@@ -1,3 +1,3 @@
 from .dictClass import dictClass
-from . import GPBO
+from . import optimize
 from .LEBT_tunner import *

@@ -52,16 +52,11 @@ weights = pd.DataFrame(weights,index=['weights'])
 _target_ref = pd.concat([target,weights])
 _target_ref.loc["weights"] = _target_ref.loc["weights"]/_target_ref.loc["weights"].sum()
 
-
-
-
 # Decision PVs
 _decision_PVs = ["FE_LEBT:DCH_D0979:I_CSET",
                  "FE_LEBT:DCV_D0979:I_CSET",
                  "FE_LEBT:DCH_D0992:I_CSET",
                  "FE_LEBT:DCV_D0992:I_CSET"]
-
-
 
 
 # LEBT_tunner
@@ -149,6 +144,7 @@ class LEBT_tunner():
             self.callbacks = [self.re_plot]
         else:
             self.callbacks = []
+
         
         
     def is_signal_stationary(self,data):
@@ -180,22 +176,16 @@ class LEBT_tunner():
     
     
     def wait_RD_reach_CSET(self, PVs, Refs, Tolerances):
-        print("wait_RD_reach_CSET begin")
         time.sleep(0.1)
-        print("Refs= ",Refs)
-        print("Tolerances= ",Tolerances)
         V = np.array([self.caget(PV.replace("CSET","RD")) for PV in PVs])
         iitr = 0
-        print("V= ",V)
         while(np.max(np.abs(V-Refs)/Tolerances) > 1.) :
             time.sleep(0.1)
             V = np.array([self.caget(PV.replace("CSET","RD")) for PV in PVs])
-            print("V= ",V)
             iitr +=1
             if iitr>20:
                 print("current / voltage set ramping not yet stabilized after 2 secconds. Ignoreing CSET-RD stablization... ")
                 break
-        print("wait_RD_reach_CSET is done")
         return
     
     
@@ -203,7 +193,6 @@ class LEBT_tunner():
         '''
         mint_t : minimum time window (in second) for averageging
         '''
-        print("wait_RD_stablize_then_read for ",PVs )
         t0 = time.time()
         dt = 0.1  # measure period. need to verify with the maximum measurable frequency
         n = int(min_t/dt)
@@ -227,8 +216,6 @@ class LEBT_tunner():
                 concatV[i,:] = [self.caget(PV) for PV in PVs]
                 time.sleep(dt) 
             V = np.vstack((V,concatV))
-            
-        print("wait_RD_stablize_then_read is done")
         
         return np.mean(V,axis=0) #, np.std(V,axis=0)
         
@@ -244,11 +231,10 @@ class LEBT_tunner():
         RD_mean = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
         self.history.y.append(RD_mean)
 #         self.history.y_std.append(RD_std)
-        print("set_n_measure is done")
         return RD_mean
     
     
-    def loss_func(self,normalized_decision_values):
+    def loss_func(self,normalized_decision_values,weight_on_transmission=1.0):
 #         x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values + self.decision_stat.loc["average"].values 
         x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values 
         y_measure = self.set_n_measure(x)
@@ -259,15 +245,12 @@ class LEBT_tunner():
         
         n_target = len(self.target_PVs)
         loss = np.sum(np.sqrt(((y_true - y_measure[:n_target])/y_std)**2)*y_weight)
+        loss += weight_on_transmission*y_measure[-2]/y_measure[-1]
         self.history.loss.append(loss)
-        
-        loss += y_measure[-2]/y_measure[-1]
-        
-        print("loss_func is done")
+
         # call callback functions if any
         for func in self.callbacks:
             func()
-        print("loss_func is returning")    
         return loss 
         
         

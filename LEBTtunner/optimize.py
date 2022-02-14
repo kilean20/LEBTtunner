@@ -18,6 +18,7 @@ def init_population_latinhypercube(num_population, len_of_vec, bounds, rng=None)
     sampled over its range.
     """
     rng = np.random
+    bounds_np = np.array(bounds)
         
     segsize = 1.0 / num_population
     samples = (segsize * rng.uniform(size=(num_population,len_of_vec))
@@ -31,12 +32,12 @@ def init_population_latinhypercube(num_population, len_of_vec, bounds, rng=None)
         order = rng.permutation(range(num_population))
         population[:, j] = samples[order, j]
 
-    return population*(bounds[:,1]-bounds[:,0])+bounds[:,0]
+    return population*(bounds_np[:,1]-bounds_np[:,0])[None,:]+bounds_np[:,0][None,:]
 
 
 
 def minimize_GP_LCB(func, x0, bounds,
-                    maxnfev=None, 
+                    maxnfev=None, initial_boundary_ratio = 0.5,
                     n_init_pop = None, args=(), LCB_nsig=1, patience=0, save_optimization_history=True, returnGP=False, verbose=True, set_func_to_best = True ):
     '''
     func: function to obtimize
@@ -50,18 +51,18 @@ def minimize_GP_LCB(func, x0, bounds,
     if n_init_pop == None:
         n_init_pop = ndim
     
+    bounds_np = np.array(bounds)
+    bounds_torch = torch.tensor(np.transpose(bounds_np))
+
     x = np.zeros([n_init_pop,ndim])
-    x[0 ,:] = x0
-    x[1:,:] = init_population_latinhypercube(ndim, n_init_pop-1, bounds)
-            
-    bounds_torch = torch.tensor(bounds)
-    result = dictClass
-    result.history = dictClass
-    
+    x[0 ,:] = x0[:]
+    if n_init_pop>1:
+        x[1:,:] = init_population_latinhypercube(n_init_pop-1, ndim, bounds_np*initial_boundary_ratio)
+    y = torch.tensor([-func(x_,*args) for x_ in x])[:,None]
     x = torch.tensor(x)
-    y = torch.tensor([-func(x_,*args) for x_ in x])
-    print("GPBO got y")
-    
+
+    result = dictClass()
+    result.history = dictClass()    
     result.history.x = x.detach().numpy()
     result.history.y = -y.detach().numpy()
     
@@ -71,23 +72,26 @@ def minimize_GP_LCB(func, x0, bounds,
     result.history.y_min = [y_min]
     
     i_patience = 0 
-    for i_eval in range(1,maxnfev):
+    for i_eval in range(n_init_pop,maxnfev):
         if verbose:
             print("epoch :{0:3d}/{0:3d}, min_fun :{1:.3e}".format(i_eval, maxnfev, y_min))
             print("decision x: ", result.x)
-        print(i_patience, patience)
         if i_patience >= patience and patience>0:       
             result.message = "maximum patience reached"
             break
             
-        print('x.shape,y.shape',x.shape,y.shape)
         gp = SingleTaskGP(x,y)
         mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
         fit_gpytorch_model(mll)
         UCB = UpperConfidenceBound(gp, beta=LCB_nsig**0.5)
-        x1, y1acqu = optimize_acqf(UCB, bounds=bounds_torch, q=1, num_restarts=20, raw_samples=20)
-        y1 = torch.unsqueeze(torch.tensor(-func(x1.detach().numpy(),*args)),0)
-        y1 = torch.tensor(y1)
+        reduction = initial_boundary_ratio + (1-initial_boundary_ratio)*(i_eval+1-n_init_pop)/(maxnfev-n_init_pop) 
+        bounds_tmp = bounds_torch*reduction
+        
+        x1, y1acqu = optimize_acqf(UCB, 
+                                   bounds=bounds_tmp, 
+                                   q=1, num_restarts=20, raw_samples=20)
+ 
+        y1 = torch.tensor([-func(x1.detach().numpy()[0,:],*args)])[:,None]
         
         x = torch.concat((x,x1),axis=0)
         y = torch.concat((y,y1),axis=0)
@@ -109,7 +113,7 @@ def minimize_GP_LCB(func, x0, bounds,
     imin = result.history.y.argmin()    
     result.x = result.history.x[imin]
     result.fun = result.history.y[imin]
-    result.nfev = i_eval
+    result.nfev = i_eval+1
     if result.nfev == maxnfev:
         result.message = "maximum function evaluation reached"
 
