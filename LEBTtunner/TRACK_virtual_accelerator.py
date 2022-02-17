@@ -7,7 +7,7 @@ import os
 import time
 
 class LEBT():
-    def __init__(self, QperA=17/78, current=25., _dutyfactor=1, npt=2000, init_beam_arg=np.zeros(14), working_directory='./'):
+    def __init__(self, QperA=17/78, current=25., _dutyfactor=1, npt=2000, init_beam_arg=np.zeros(14), working_directory='./',verbose=False):
         #for 78Kr17
         self._cS4 = -0.002891 
         self._scale = (17/78)/QperA
@@ -21,7 +21,9 @@ class LEBT():
         if not os.path.isdir(self._working_directory):
             os.makedirs(self._working_directory)
         self._download_TRACK_files()
-            
+        self._verbose = verbose
+           
+        self._set_time = time.time()
         self._simulated = False
         self._measured_data = None
         self._name_family_simval = [['SOL_D0787','B',69.9*self._cS4*self._scale],
@@ -181,6 +183,9 @@ class LEBT():
         track.run(batch=batch)
         t1 = time.time()
         self.run_time.append(t1-t0)
+        self._simulate_time = t1-t0
+        if self._verbose:
+            print("TRACK run time is ",int(t1-t0))
         try:
             self._measured_data = kutil.get_measurements(track,
                                                          keys=["BCM_D0989",
@@ -189,8 +194,10 @@ class LEBT():
                                                                "BPM_D1072",
                                                                "BPM_D1094",
                                                                "FC_D1102"])
+            os.rename("beam.out","beam_.out")
         except:
             # raise RuntimeError("TRACK simulation failed. Check TRACK files...")
+            print("TRACK simulation failed. Check TRACK files...")
             self._measured_data = "TRACK simulation failed. Check TRACK files..."
         os.chdir(old_path)
         self._simulated = True
@@ -282,18 +289,24 @@ class LEBT():
         if not flag_exist:
             self._name_family_simval.append([name,family,simval])
         self._simulated = False
+        self._set_time = time.time()
 
 
     def caget(self,PVname):
         self._runTRACK()
+        #if hasattr(self,"_simulate_time"):
+        #    decay = np.exp( -(time.time()-self._simulate_time-self._set_time)/0.5 )
+        #else:      
+        #    decay = np.exp( -(time.time()-self._set_time)/0.5 )  
+        #noiseF = 0.3*np.random.randn() + decay
         if type(self._measured_data) is str:
             return 0
         name,family,Dnum = self._from_PV_to_name_family_Dnum(PVname)
         if "BPM_" in name:
             if family == "XPOS_RD":
-                return self._measured_data.loc[name].xcen*10
+                return self._measured_data.loc[name].xcen*10 #+ 0.05*noiseF
             elif family == "YPOS_RD":
-                return self._measured_data.loc[name].ycen*10
+                return self._measured_data.loc[name].ycen*10 #+ 0.05*noiseF
             elif family == "PHASE_RD":
                 if Dnum == 1056:
                     offset = 79.0
@@ -303,34 +316,34 @@ class LEBT():
                     offset = -19.4 -50.0
                 else:
                     offset = 0
-                return self._measured_data.loc[name].zcen + offset
+                return self._measured_data.loc[name].zcen + offset #+ 0.05*noiseF
             else:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)
                 
         elif "BCM_" in name:
             if family == "AVGPK_RD":
-                return self._measured_data.loc[name].np/self._npt*self._current
+                return self._measured_data.loc[name].np/self._npt*self._current #*(1+0.05*noiseF)
             elif family == "AVG_RD":
-                return self._measured_data.loc[name].np/self._npt*self._current*self._duty
+                return self._measured_data.loc[name].np/self._npt*self._current*self._duty #*(1+0.05*noiseF)
             else:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)
                 
         elif "FC_" in name:
             if family == "PKAVG_RD":
-                return self._measured_data.loc[name].np/self._npt*self._current
+                return self._measured_data.loc[name].np/self._npt*self._current #*(1+0.05*noiseF)
             elif family == "AVG_RD":
-                return self._measured_data.loc[name].np/self._npt*self._current*self._duty
+                return self._measured_data.loc[name].np/self._npt*self._current*self._duty #*(1+0.05*noiseF)
             else:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)
                 
         elif "HVP_" in name:
             if family == "I_RD":
-                return self._current
+                return self._current #*(1+0.05*noiseF)
             else:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)
 
         else:
             try:
-                return self._conversion_from_TRACK_to_PV(PVname)
+                return self._conversion_from_TRACK_to_PV(PVname) #*(1+0.02*noiseF)
             except:
                 raise ValueError("not yet implemented PV for measurement: ",PVname)    

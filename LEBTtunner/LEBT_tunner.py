@@ -109,10 +109,10 @@ class LEBT_tunner():
         self.virtual = virtual
         if virtual:
             from . import TRACK_virtual_accelerator as _virtual_AC
-            _virtual_AC = _virtual_AC.LEBT(QperA = self.QperA, **virtual_kwarg)
-            _virtual_AC._simulated = True
-            self.caget = _virtual_AC.caget
-            self.caput = _virtual_AC.caput
+            self.virtual_AC = _virtual_AC.LEBT(QperA = self.QperA, **virtual_kwarg)
+            self.virtual_AC._simulated = True
+            self.caget = self.virtual_AC.caget
+            self.caput = self.virtual_AC.caput
         else:
             from phantasy import caget,caput
             self.caget = caget
@@ -139,6 +139,7 @@ class LEBT_tunner():
         self.history.y = []
         self.history.y_std = []
         self.history.loss = []
+        self.history.loss_runtime = []
         
         self.date = datetime.now().strftime("%Y%m%d_%H%M%S")
         
@@ -155,19 +156,31 @@ class LEBT_tunner():
         check if a time series data is stationary 
         (assume time interval is short so that signal is stationary unless a linear fit is succesful with non-negligble slope )
         '''
-        N,T = data.shape
+        #t0=time.time()
+        T,N = data.shape
         residue = np.zeros(N)
         a1 = np.zeros(N)
         x = np.linspace(0, 1, T)
-        for i in range(8):
-            a1[i],a0 = np.polyfit(x,data[i,:],deg=1)
-            residue[i] = np.std(data[i,:]-a1[i]*x-a0)
-            
-        noise = np.std(data,axis=1)
-
-        isFitTrusted = residue < 0.9*noise
-        isSlopeLarge = np.abs(a1) > 0.5*residue
-        return np.all(np.logical_not( isFitTrusted *isSlopeLarge ))
+        #plt.figure(figsize=(16,4))
+        for i in range(N):
+            #if i < int(N/4)*4:
+                #plt.subplot(int(N/4),4,i+1)
+                #plt.plot(data[:,i])            
+            a1[i],a0 = np.polyfit(x,data[:,i],deg=1)
+            residue[i] = np.std(data[:,i]-a1[i]*x-a0)
+        #plt.show()
+        noise = np.std(data,axis=0)
+        if np.all(noise < 1e-12):
+            is_stationary = True
+        else:
+            isFitTrusted = residue <= 0.9*noise
+            isSlopeLarge = np.abs(a1) > 1.1*residue
+            #t1=time.time()
+            #print("isFitTrusted: ",isFitTrusted)
+            #print("isSlopeLarge: ",isSlopeLarge)
+            #print("isStaionary: ",np.logical_not( isFitTrusted *isSlopeLarge ))
+            is_stationary = np.sum(np.logical_not( isFitTrusted *isSlopeLarge )) > 0.8*len(isFitTrusted)  # 80% of the PVs are stationary
+        return is_stationary 
     
     
     def read_normalized_decision_values(self):
@@ -193,7 +206,7 @@ class LEBT_tunner():
         return
     
     
-    def wait_RD_stablize_then_read(self, PVs, min_t=2, max_t=5):
+    def wait_RD_stablize_then_read(self, PVs, min_t=1.2, max_t=4):
         '''
         mint_t : minimum time window (in second) for averageging
         '''
@@ -204,22 +217,25 @@ class LEBT_tunner():
         for i in range(n):
             V[i,:] = [self.caget(PV) for PV in PVs]
             time.sleep(dt) 
-            
+    
         while(time.time()-t0 < max_t):
-            if self.is_signal_stationary:
+            if self.is_signal_stationary(V):
                 break
-            V[1:,:] = V[:n-1,:]
-            V[-1,:] = [self.caget(PV) for PV in PVs]
-            time.sleep(0.1)
+            # empty 20% of the head of time series data and re-fill new time data in the tail
+            m = int(0.2*n)+1
+            V[:n-m,:] = V[m:,:]
+            for j in range(m):
+                V[n-m+j,:] = [self.caget(PV) for PV in PVs]
+                time.sleep(dt)            
        
-        t1 = time.time()
-        m = int(max_t - t1)
-        if m > 1:
-            concatV = np.zeros([m,len(PVs)])
-            for i in range(m):
-                concatV[i,:] = [self.caget(PV) for PV in PVs]
-                time.sleep(dt) 
-            V = np.vstack((V,concatV))
+        #t1 = time.time()
+        #m = int(max_t - t1)
+        #if m > 1:
+        #    concatV = np.zeros([m,len(PVs)])
+        #    for i in range(m):
+        #        concatV[i,:] = [self.caget(PV) for PV in PVs]
+        #        time.sleep(dt) 
+        #    V = np.vstack((V,concatV))
         
         return np.mean(V,axis=0) #, np.std(V,axis=0)
         
@@ -232,13 +248,14 @@ class LEBT_tunner():
         self.wait_RD_reach_CSET(self.decision_PVs, decision_values, 0.1*self.decision_stat.loc["standard_deviation"].values)
         # wait target RD stablize and measure 
 #         RD_mean, RD_std = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
-        RD_mean = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=2, max_t=5)
+        RD_mean = self.wait_RD_stablize_then_read(self.target_PVs + self.current_PVs , min_t=1.2, max_t=4)
         self.history.y.append(list(RD_mean))
 #         self.history.y_std.append(RD_std)
         return RD_mean
     
     
     def loss_func(self,normalized_decision_values,weight_on_transmission=1.0):
+        t0 = time.time()
         if self.virtual:
             x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values 
         else:
@@ -259,7 +276,8 @@ class LEBT_tunner():
         # call callback functions if any
         for func in self.callbacks:
             func()
-
+        t1 = time.time()
+        self.history.loss_runtime.append(t1-t0)
         return loss 
         
         

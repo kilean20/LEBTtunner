@@ -13,7 +13,7 @@ def is_notebook():
     return True
 
 
-def loss_regularizer(loss_func,loss_ifinf,args=(),lower_limit=None,upper_limit=None,flip_sign=False):
+def loss_regularizer(loss_func,loss_ifinf,args=(),lower_limit=None,upper_limit=None,flip_sign=False, loss_mean=0, loss_std=1):
     def regularized_lossfunc(x):
         loss = loss_func(x,*args)
         if flip_sign:
@@ -25,6 +25,6 @@ def loss_regularizer(loss_func,loss_ifinf,args=(),lower_limit=None,upper_limit=N
         if isinf(loss):
             loss = loss_ifinf
 
-        return loss
+        return (loss-loss_mean)/loss_std
 
     return regularized_lossfunc
