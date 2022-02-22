@@ -38,7 +38,7 @@ def init_population_latinhypercube(num_population, len_of_vec, bounds, rng=None)
 
 def minimize_GP_LCB(func, x0, bounds, args=(), initial_boundary_ratio = 0.8,
                     n_init_pop = None, maxnfev=10000, patience=1000,
-                    LCB_nsig=1,
+                    LCB_nsig=1, trainGP_everyEpoch=False,
                     acquisition_optimize_options = {"num_restarts":2, "raw_samples":20},
                     scipy_minimize_options = {"ftol":2e-3},
                     returnGP=False, 
@@ -104,10 +104,13 @@ def minimize_GP_LCB(func, x0, bounds, args=(), initial_boundary_ratio = 0.8,
         
         t0 = time.time()
         # train GP hyper-parameters only when number of training data is increased by more than 10%
-        if data_size*1.1 < len(x):
-            data_size = len(x)
-            mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
-            fit_gpytorch_model(mll,options=scipy_minimize_options)
+        if trainGP_everyEpoch:
+            gp = SingleTaskGP(x,y)
+        else:
+            if data_size*1.1 < len(x):
+                data_size = len(x)
+                mll = ExactMarginalLogLikelihood(gp.likelihood, gp)
+                fit_gpytorch_model(mll,options=scipy_minimize_options)
         t1 = time.time()
 
         # increase bounds over optimization epochs starting from reduced bounds by factor of "initial_boundary_ratio"
@@ -126,7 +129,8 @@ def minimize_GP_LCB(func, x0, bounds, args=(), initial_boundary_ratio = 0.8,
         x = torch.concat((x,x1),axis=0)
         y = torch.concat((y,y1),axis=0)
         # add GP training data
-        gp = gp.get_fantasy_model(x1,y1)
+        if not trainGP_everyEpoch:
+            gp = gp.get_fantasy_model(x1,y1)
 
         result.surrogate.training_time.append(t1-t0)
         result.surrogate.acqusition_optimization_time.append(t2-t1)
