@@ -254,7 +254,7 @@ class LEBT_tunner():
         return RD_mean
     
     
-    def loss_func(self,normalized_decision_values,weight_on_transmission=1.0):
+    def loss_func(self,normalized_decision_values,weight_on_transmission=0.1):
         t0 = time.time()
         if self.virtual:
             x = normalized_decision_values/self.decision_stat.loc["standard_deviation"].values 
